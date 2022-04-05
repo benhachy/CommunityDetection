@@ -1,0 +1,239 @@
+---
+title: "TP4 - Statistical analysis and data mining"
+author: "Youssef BENHACHEM, Mouad BOUCHNAF, Amine EL BOUZID"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Import and first explorations
+```{r}
+library(igraph)
+dat <- read.table("lesmis.txt" , header = FALSE , sep = "\t")
+misgraph <- simplify(graph.data.frame(dat, directed = FALSE))
+```
+
+```{r}
+#a/ visualization of the graph 
+set.seed(0)
+plot.igraph(misgraph, frame = 1)
+```
+
+We see that the visualization is not clear since the vertices and arcs are intertwined, which prevents us from having a clear picture of the relationships in the graph. Let's try to fix that.
+
+```{r}
+set.seed(0)
+#We first change the size of the font of labels
+V(misgraph)$label.cex <- 0.5
+
+#We apply a layout_nicely that will choose a nice layout algorithm for our graph
+co <- layout_nicely(misgraph)
+#We plot the graph by playing with some parameters such as the size of vertex etc.
+plot.igraph(misgraph, layout=co, vertex.size=100, edge.arrow.size=10, xlim=range(co[,1]), 
+     ylim=range(co[,2]), rescale=F, vertex.label.dist=0, frame = 1)
+```
+The graph is more visible. The choice of the layout function is crucial in order to have a good display of the graph. For example, let's try another function : 
+```{r}
+star <- layout_as_star(misgraph)
+#We plot the graph by playing with some parameters such as the size of vertex etc.
+plot.igraph(misgraph, layout=star, vertex.size=10, edge.arrow.size=10, xlim=range(star[,1]), 
+     ylim=range(star[,2]), rescale=F, vertex.label.dist=0, frame = 1)
+```
+$\textbf{b)}$ 
+
+Type of the graph : undirected connected graph 
+
+```{r}
+#Order of the graph
+length(V(misgraph))
+
+#Size of the graph
+length(E(misgraph))
+```
+
+Density of the graph : 
+ As the maximum possible number of edges in our graph is : 2926 , the density of our graph is $$\frac{254}{2926} \thickapprox 0.087 $$
+ 
+```{r}
+#Diameter of the graph 
+diameter(misgraph, weight = NA)
+```
+
+We see that the degrees for most vertices is not equal to $n - 1 = 76$ and therefore the graph is not complete.
+
+$\textbf{c)}$
+```{r}
+display_graph <- function(size){
+  set.seed(3)
+  V(misgraph)$label.cex <- (degree(misgraph)+10)/max(degree(misgraph))
+  l <- layout_with_fr(misgraph)
+  plot.igraph(misgraph, layout=l, vertex.size=size, frame = 1)
+}
+
+display_graph(3) 
+```
+We note that for each vertex the size of its text depends on its degree. In fact, the higher the degree of a vertex is, the bigger the text. Hence, this allows us to easily spot the vertices with the higher degree. For example, we see that Jean Valjean has the bigger text size, which is normal since he is the principal character of the novel.This wil help us to easily spot the principal charaters in the novel. However, the graph is hardly readable using The Fruchterman-Reingold layout, we suggest using the layout_as_star.
+
+## 2. Community detection
+
+# 2.1. Hierarchical agglomerative clustering
+
+$\textbf{a)}$ The hierarchical agglomerative clustering method consists in starting with each point being its own cluster. Then at each iteration, we identify the closest two clusters and merge them. We end the algorithm when we obtain one global cluster for all points. It is a bottom-up approach.
+
+$\textbf{b)}$ 
+```{r}
+#building the dissimilarity matrix
+sim <- similarity(graph = misgraph, method = "jaccard")
+dissimilarity <- matrix(data = 1, nrow = 77, ncol = 77) - sim
+
+#hierarchical clustering
+mishclust <- hclust(d = as.dist(dissimilarity), method = "complete")
+```
+
+$\textbf{c)}$
+```{r}
+
+#' Displays the modularity of a hierarchical clustering 
+display_modularity <- function(clustering_tree){
+  
+  mod = c()
+  for(i in 1:10)
+  {
+    #cut into the number i of clusters
+    labels = cutree(mishclust ,i)
+    #Computes the modularity in each subset of clustering
+    mod[i] = modularity(x=misgraph , membership = labels)
+  }
+  plot(1:10, mod , type = "b", col ="blue", title = "Modularity as a function of number of clusters",
+       xlab = "Number of clusters", ylab = "Modularity")
+  
+  cat(mod[7], mod [9])
+  
+}
+
+display_modularity(mishclust)
+
+```
+We seek to maximize the modularity of the graph, as it measures how separated are our clusters . Following this idea, the most appropriate number of communities to divide the graph is $K = 9$
+
+$\textbf{d)}$
+
+```{r}
+V(misgraph)$color = cutree(mishclust, 9) 
+
+display_graph(15) #9 communities
+```
+
+```{r}
+
+
+#' Returns the name of vertices of a given cluster
+#' @param k number of the cluster 
+#' @param clustering_list a list specifying the groups of the graph, it is the same list returned by cutree function
+#' @param name_or_num a boolean specifying wheter the function returns names or the numbers of vertices
+#' @return a list containing the names in the cluster
+display_cluster <- function(k, clustering_list, name_or_num = FALSE){
+  elements = c()
+  
+  for (i in 1:77){
+    if(clustering_list[i] == k){
+      
+      if (name_or_num == TRUE){
+        elements <-append(elements,V(misgraph)[i])
+      }
+      
+      else{
+        elements <-append(elements,i)
+      }
+    }
+  }
+  
+  return (elements)
+}
+
+#' Returns the number of edges of a set of vertices
+number_of_edges <- function(vertices){
+  count = 0
+  
+  for (i in vertices){
+    for (j in vertices){
+      count <- count + misgraph[i][j] 
+    }
+  }
+  
+  count <- count/2;
+  return(count)
+}
+
+#' Returns the number of vertices in a community
+number_of_vertices <-function(k, clustering_list){
+  
+  count = 0 
+  for (i in clustering_list){
+    if (i == k){
+      count <- count + 1
+    }
+  }
+  
+  return(count)
+}
+
+
+
+```
+
+```{r}
+clustering_list = cutree(mishclust,9)
+
+for (i in 1:9){
+  cluster <- display_cluster(i,clustering_list)
+  num_edges <- number_of_edges(cluster)
+  num_vertices <- number_of_vertices(i ,clustering_list)
+  max_edges <- num_vertices*(num_vertices -1 )/2
+  
+  cat("The density of the community ",i,"is", num_edges/max_edges,"\n")
+  
+}
+
+```
+Comment : 
+ 
+  It is normal that for communities 5,8 and 9 the density is NaN, this is because each of them is only one vertex
+  The communities 3,6 and 7 have a zero density, which is normal because there are no edges between its vertices
+
+
+$\textbf{e)}$
+```{r}
+plot(mishclust, cex = 0.6, labels = V(misgraph)$name)
+
+```
+Here we get the dendrogram of the agglomerative clustering.
+
+$\textbf{f)}$
+```{r}
+# Hierarchical clustering with Single Linkage
+mishclust <- hclust(d = as.dist(dissimilarity), method = "single")
+
+display_modularity(mishclust)
+
+```
+
+In the Single Linkage method, the maximum modularity is 0.3164409 and we obtained for  9 clusters.
+
+```{r}
+# Hierarchical clustering with Average Linkage
+mishclust <- hclust(d = as.dist(dissimilarity), method = "average")
+
+display_modularity(mishclust)
+```
+
+
+In the Average Linkage method, the maximum modularity is 0.3473557 and we obtain it for 7 clusters 
+
+For the Complete Linkage method, we find we find that the maximum modularity is 0.1766461 for 9 clusters.
+
+To sum up, from the three different linkage methods, the Average Linkage Method gives us the higher modularity, it is the one that seems to give the best results. 
